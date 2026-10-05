@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="lv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Termiņa pagarināšana · darbiniekam</title>
+  <style>
+    :root {
+      --navy: #1D3557;
+      --teal: #2A9D8F;
+      --coral: #E76F51;
+      --bg: #F1F3F5;
+      --line: #C9CED6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: #1a1a1a;
+    }
+    header { background: var(--navy); color: #fff; padding: 16px; }
+    header h1 { margin: 0; font-size: 1.25rem; }
+    header p { margin: 4px 0 0; font-size: 0.85rem; opacity: 0.85; }
+    main { max-width: 720px; margin: 0 auto; padding: 16px; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    .card h2 { margin: 0 0 8px; font-size: 1.05rem; }
+    label { display: block; font-weight: 600; margin-top: 12px; }
+    input, textarea {
+      width: 100%; padding: 8px; margin-top: 4px; font: inherit;
+      border: 1px solid var(--line); border-radius: 6px; background: #fff;
+    }
+    textarea { min-height: 96px; resize: vertical; }
+    .row { display: flex; gap: 8px; align-items: end; }
+    .row > div { flex: 1; }
+    .row button { margin-top: 0; }
+    .hint { color: #555; font-size: 0.9rem; margin: 4px 0 0; }
+    .field-error { color: var(--coral); font-size: 0.9rem; margin-top: 4px; min-height: 1em; }
+    .invalid { border-color: var(--coral); }
+    button {
+      margin-top: 16px; padding: 10px 20px; font: inherit; font-weight: 600;
+      color: #fff; background: var(--teal); border: 0; border-radius: 6px; cursor: pointer;
+    }
+    button:disabled { opacity: 0.6; cursor: wait; }
+    .message { padding: 12px; border-radius: 6px; margin-top: 16px; }
+    .message.error { background: #fdece7; border: 1px solid var(--coral); }
+    .message.ok { background: #e6f4f2; border: 1px solid var(--teal); }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 8px 0 0; }
+    dt { font-weight: 600; }
+    dd { margin: 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { background: #e8ecf1; }
+    [hidden] { display: none !important; }
+    footer { font-size: 0.8rem; color: #555; text-align: center; padding: 16px; }
+    a { color: var(--navy); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Ezermalas novada pašvaldība · Termiņa pagarināšana</h1>
+    <p>Mācību prototips darbiniekam. Pašvaldība ir izdomāta. Visi dati ir sintētiski.</p>
+  </header>
+
+  <main>
+    <form id="lookup-form" class="card" novalidate>
+      <h2>Iesniegums</h2>
+      <div class="row">
+        <div>
+          <label for="submissionId">Iesnieguma numurs</label>
+          <input id="submissionId" name="submissionId" placeholder="IES-2026-000006" autocomplete="off">
+        </div>
+        <button type="submit" id="lookup">Atvērt</button>
+      </div>
+      <div id="lookup-message" aria-live="polite"></div>
+      <dl id="details" hidden>
+        <dt>Numurs</dt><dd id="d-id"></dd>
+        <dt>Statuss</dt><dd id="d-status"></dd>
+        <dt>Tēma</dt><dd id="d-topic"></dd>
+        <dt>Saņemts (UTC)</dt><dd id="d-received"></dd>
+        <dt>Atbildes termiņš</dt><dd id="d-due"></dd>
+      </dl>
+    </form>
+
+    <form id="extend-form" class="card" novalidate hidden>
+      <h2>Pagarināt atbildes termiņu</h2>
+      <p class="hint">
+        Termiņu var pagarināt iesniegumiem ar statusu „Saņemts” vai „Izskatīšanā”.
+        Jaunajam termiņam jābūt vēlākam par pašreizējo un ne vēlākam par 4 kalendāra
+        mēnešiem no saņemšanas dienas. Nosacījumus pārbauda sistēma.
+      </p>
+
+      <label for="newDueDate">Jaunais termiņš</label>
+      <input id="newDueDate" name="newDueDate" type="date">
+      <div class="field-error" data-for="newDueDate"></div>
+
+      <label for="reason">Iemesls</label>
+      <textarea id="reason" name="reason"></textarea>
+      <p class="hint">10–500 rakstzīmes. Iedzīvotājs iemeslu vēlāk redzēs paziņojumā, tāpēc rakstiet saprotami.</p>
+      <div class="field-error" data-for="reason"></div>
+
+      <button type="submit" id="extend">Pagarināt termiņu</button>
+      <div id="extend-message" aria-live="polite"></div>
+    </form>
+
+    <section id="audit-card" class="card" hidden>
+      <h2>Darbību vēsture</h2>
+      <table>
+        <thead><tr><th>Laiks (UTC)</th><th>Darbība</th><th>Paskaidrojums</th></tr></thead>
+        <tbody id="audit-rows"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>
+    <a href="/ui/darbinieks.html">Iesniegumu saraksts</a> ·
+    <a href="/docs">Swagger UI (/docs)</a> · Ezermalas pieteikumu sistēma · mācību prototips
+  </footer>
+
+  <script>
+    // Validāciju veic API. Lapa tikai parāda API atbildi saprotamā tekstā.
+    const ISSUE_TEXT = {
+      REQUIRED: "Obligāts lauks",
+      INVALID_FORMAT: "Nepareizs formāts",
+      TOO_LONG: "Pārāk garš teksts",
+    };
+    // Lauka kļūdas paskaidrojums pēc API līguma (CR-C, PO5: īss iemesls ir INVALID_FORMAT).
+    const FIELD_ISSUE_TEXT = {
+      newDueDate: { INVALID_FORMAT: "Ievadiet derīgu datumu" },
+      reason: {
+        INVALID_FORMAT: "Iemeslam jābūt 10–500 rakstzīmes garam (bez atstarpēm sākumā un beigās)",
+        TOO_LONG: "Iemesls nedrīkst būt garāks par 500 rakstzīmēm",
+      },
+    };
+    const ERROR_TEXT = {
+      NOT_FOUND: "Iesniegums ar šādu numuru nav atrasts.",
+      INVALID_STATE: "Termiņu var pagarināt tikai iesniegumiem ar statusu „Saņemts” vai „Izskatīšanā”.",
+      INVALID_DUE_DATE:
+        "Jaunais termiņš nav atļauts: tam jābūt vēlākam par pašreizējo termiņu un ne vēlākam par 4 kalendāra mēnešiem no saņemšanas dienas.",
+      VALIDATION_ERROR: "Pārbaudiet iezīmētos laukus.",
+    };
+    const STATUS_TEXT = {
+      RECEIVED: "Saņemts",
+      IN_PROGRESS: "Izskatīšanā",
+      FORWARDED: "Pārsūtīts",
+      ANSWERED: "Atbildēts",
+      WITHDRAWN: "Atsaukts",
+    };
+    const TOPIC_TEXT = {
+      ROADS: "Ceļi un ielas",
+      WASTE: "Atkritumi",
+      PLANNING: "Teritorijas plānošana",
+      PARKS: "Parki un skvēri",
+      OTHER: "Cits",
+    };
+    const ACTION_TEXT = {
+      CREATE: "Saņemts",
+      WITHDRAW: "Atsaukts",
+      FORWARD: "Pārsūtīts",
+      EXTEND: "Termiņš pagarināts",
+    };
+
+    const lookupForm = document.getElementById("lookup-form");
+    const extendForm = document.getElementById("extend-form");
+    const lookupMessage = document.getElementById("lookup-message");
+    const extendMessage = document.getElementById("extend-message");
+    const extendButton = document.getElementById("extend");
+    let currentId = null;
+
+    function formatDate(isoDate) {
+      const [year, month, day] = isoDate.split("-");
+      return `${day}.${month}.${year}`;
+    }
+
+    // Laiku rāda UTC, jo 4 mēnešu robežu skaita no saņemšanas datuma pēc UTC.
+    function formatDateTimeUtc(isoDateTime) {
+      const iso = new Date(isoDateTime).toISOString();
+      return `${formatDate(iso.slice(0, 10))} ${iso.slice(11, 16)}`;
+    }
+
+    function setText(id, text) {
+      document.getElementById(id).textContent = text == null ? "" : String(text);
+    }
+
+    function showMessage(target, kind, title, text) {
+      target.className = "message " + kind;
+      target.textContent = "";
+      const strong = document.createElement("strong");
+      strong.textContent = title;
+      target.appendChild(strong);
+      if (text) {
+        target.appendChild(document.createElement("br"));
+        target.appendChild(document.createTextNode(text));
+      }
+    }
+
+    function clearMessage(target) {
+      target.className = "";
+      target.textContent = "";
+    }
+
+    function clearFieldErrors() {
+      extendForm.querySelectorAll(".field-error").forEach((el) => (el.textContent = ""));
+      extendForm.querySelectorAll(".invalid").forEach((el) => el.classList.remove("invalid"));
+    }
+
+    function showFieldError(field, text) {
+      const target = extendForm.querySelector(`.field-error[data-for="${field}"]`);
+      if (!target) return false;
+      target.textContent = text;
+      document.getElementById(field)?.classList.add("invalid");
+      return true;
+    }
+
+    function issueText(field, issue) {
+      return (FIELD_ISSUE_TEXT[field] || {})[issue] || ISSUE_TEXT[issue] || issue;
+    }
+
+    async function readJson(response) {
+      try { return await response.json(); } catch (e) { return null; }
+    }
+
+    function errorOf(body) {
+      return (body && body.error) || {};
+    }
+
+    function showSubmission(data) {
+      setText("d-id", data.id);
+      setText("d-status", STATUS_TEXT[data.status] || data.status);
+      setText("d-topic", TOPIC_TEXT[data.topic] || data.topic);
+      setText("d-received", formatDateTimeUtc(data.receivedAt));
+      setText("d-due", formatDate(data.dueDate));
+      document.getElementById("details").hidden = false;
+    }
+
+    async function loadAudit(id) {
+      const response = await fetch(`/submissions/${encodeURIComponent(id)}/audit`);
+      const rows = document.getElementById("audit-rows");
+      rows.textContent = "";
+      if (!response.ok) {
+        document.getElementById("audit-card").hidden = true;
+        return;
+      }
+      for (const entry of await response.json()) {
+        const tr = document.createElement("tr");
+        [formatDateTimeUtc(entry.at), ACTION_TEXT[entry.action] || entry.action, entry.detail || "—"]
+          .forEach((value) => {
+            const td = document.createElement("td");
+            td.textContent = value;
+            tr.appendChild(td);
+          });
+        rows.appendChild(tr);
+      }
+      document.getElementById("audit-card").hidden = false;
+    }
+
+    async function loadSubmission(id) {
+      clearMessage(lookupMessage);
+      const response = await fetch(`/submissions/${encodeURIComponent(id)}`);
+      const body = await readJson(response);
+      if (!response.ok) {
+        const error = errorOf(body);
+        currentId = null;
+        document.getElementById("details").hidden = true;
+        document.getElementById("audit-card").hidden = true;
+        extendForm.hidden = true;
+        showMessage(lookupMessage, "error", ERROR_TEXT[error.code] || `Kļūda (HTTP ${response.status})`);
+        return false;
+      }
+      currentId = body.id;
+      showSubmission(body);
+      extendForm.hidden = false;
+      await loadAudit(body.id);
+      return true;
+    }
+
+    lookupForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const id = document.getElementById("submissionId").value.trim();
+      clearMessage(extendMessage);
+      clearFieldErrors();
+      if (!id) {
+        showMessage(lookupMessage, "error", "Ievadiet iesnieguma numuru.");
+        return;
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.set("id", id);
+      window.history.replaceState(null, "", url);
+      try {
+        await loadSubmission(id);
+      } catch (error) {
+        showMessage(lookupMessage, "error", "Neizdevās sazināties ar serveri.");
+      }
+    });
+
+    extendForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!currentId) return;
+      clearFieldErrors();
+      clearMessage(extendMessage);
+      const payload = Object.fromEntries(new FormData(extendForm).entries());
+      // Tukšus laukus nesūtām: API pats pasaka, kas trūkst.
+      for (const key of Object.keys(payload)) {
+        if (payload[key] === "") delete payload[key];
+      }
+      extendButton.disabled = true;
+      try {
+        const response = await fetch(`/submissions/${encodeURIComponent(currentId)}/extend`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const body = await readJson(response);
+        if (response.status === 200) {
+          showSubmission(body);
+          await loadAudit(body.id);
+          extendForm.reset();
+          showMessage(extendMessage, "ok", "Termiņš pagarināts",
+            `Jaunais atbildes termiņš: ${formatDate(body.dueDate)}`);
+          return;
+        }
+        const error = errorOf(body);
+        const unknown = [];
+        for (const detail of error.details || []) {
+          const text = issueText(detail.field, detail.issue);
+          if (!showFieldError(detail.field, text)) unknown.push(`${detail.field}: ${text}`);
+        }
+        if (error.code === "INVALID_DUE_DATE") {
+          showFieldError("newDueDate", "Šis datums nav atļauts");
+        }
+        const title = ERROR_TEXT[error.code] || `Termiņš nav pagarināts (HTTP ${response.status})`;
+        showMessage(extendMessage, "error", title, unknown.join("; "));
+        // Statuss vai termiņš varēja mainīties: parāda aktuālos datus.
+        if (error.code === "INVALID_STATE" || error.code === "INVALID_DUE_DATE") {
+          await loadSubmission(currentId);
+        }
+      } catch (error) {
+        showMessage(extendMessage, "error", "Neizdevās sazināties ar serveri.");
+      } finally {
+        extendButton.disabled = false;
+      }
+    });
+
+    const initialId = new URLSearchParams(window.location.search).get("id");
+    if (initialId) {
+      document.getElementById("submissionId").value = initialId;
+      loadSubmission(initialId).catch(() =>
+        showMessage(lookupMessage, "error", "Neizdevās sazināties ar serveri."));
+    }
+  </script>
+</body>
+</html>
