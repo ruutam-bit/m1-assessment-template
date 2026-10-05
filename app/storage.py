@@ -260,6 +260,25 @@ def update_due_date(submission_id: str, due_date: str) -> dict:
     return get(submission_id)
 
 
+def extend_due_date(
+    submission_id: str, due_date: str, statuses: list[str]
+) -> dict | None:
+    """CR-C: maina termiņu tikai tad, ja jaunais ir vēlāks un statuss ir atļauts.
+
+    Pārbaude un ieraksts ir viens UPDATE: konkurējošs pieprasījums termiņu nesaīsina.
+    Atgriež atjaunoto ierakstu vai None, ja nosacījums neizpildījās.
+    """
+    # f-string veido tikai vietturus "?". Vērtības ir parametri.
+    placeholders = ", ".join("?" for _ in statuses)
+    with _lock:
+        cursor = _conn.execute(
+            f"UPDATE submissions SET dueDate = ? WHERE id = ? AND dueDate < ? "
+            f"AND status IN ({placeholders})",
+            (due_date, submission_id, due_date, *statuses),
+        )
+    return get(submission_id) if cursor.rowcount else None
+
+
 def find_institution(code: str) -> dict | None:
     """Iestāde pēc koda vai None, ja tādas nav."""
     with _lock:
