@@ -1,8 +1,9 @@
 """Ezermalas pieteikumu sistēma · iesniegumu API (mācību prototips)."""
 
+import calendar
 import logging
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
 
@@ -11,10 +12,16 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import clock, omd_client, storage
-from app.errors import SubmissionNotFound, register_error_handlers
+from app.errors import (
+    InvalidDueDate,
+    InvalidState,
+    SubmissionNotFound,
+    register_error_handlers,
+)
 from app.models import (
     AuditEntry,
     Error,
+    ExtendRequest,
     Health,
     PreferredChannel,
     ReasonCode,
@@ -37,6 +44,8 @@ TOPIC_NAMES = {
     Topic.OTHER: "Cits",
 }
 REPLY_DAYS = 30  # Vienkāršots termiņš: 30 kalendāra dienas
+MAX_EXTEND_MONTHS = 4  # CR-C: kopējais termiņš līdz 4 mēnešiem no saņemšanas dienas
+EXTENDABLE_STATUSES = {SubmissionStatus.RECEIVED, SubmissionStatus.IN_PROGRESS}
 UI_DIR = Path(__file__).resolve().parent.parent / "ui"
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -65,6 +74,13 @@ def decide_reply_channel(
             return ReplyChannel.EMAIL, ReasonCode.E_ADDRESS_NOT_ACTIVE
         return ReplyChannel(preferred.value), None
     return ReplyChannel.PENDING_CHANNEL_CHECK, ReasonCode.REGISTER_UNAVAILABLE
+
+
+def add_months(start: date, months: int) -> date:
+    """CR-C: +N kalendāra mēneši. Ja mērķa mēnesī nav tāda datuma, ņem pēdējo dienu."""
+    index = start.month - 1 + months
+    year, month = start.year + index // 12, index % 12 + 1
+    return date(year, month, min(start.day, calendar.monthrange(year, month)[1]))
 
 
 @app.get("/", include_in_schema=False)
@@ -158,6 +174,44 @@ def get_submission_audit(submission_id: str) -> list[AuditEntry]:
     if storage.get(submission_id) is None:
         raise SubmissionNotFound()
     return [AuditEntry(**entry) for entry in storage.list_audit(submission_id)]
+
+
+def _ensure_extendable(record: dict | None, new_due_date: date) -> None:
+    """CR-C pārbaudes secībā 404 → 409 → INVALID_DUE_DATE (PO6)."""
+    if record is None:
+        raise SubmissionNotFound()
+    if SubmissionStatus(record["status"]) not in EXTENDABLE_STATUSES:
+        raise InvalidState()
+    current = date.fromisoformat(record["dueDate"])
+    received_at = datetime.fromisoformat(record["receivedAt"])
+    limit = add_months(received_at.astimezone(timezone.utc).date(), MAX_EXTEND_MONTHS)
+    if not current < new_due_date <= limit:
+        raise InvalidDueDate()
+
+
+@app.post(
+    "/submissions/{submission_id}/extend",
+    response_model=Submission,
+    responses={400: {"model": Error}, 404: {"model": Error}, 409: {"model": Error}},
+    tags=["Darbības ar iesniegumu"],
+)
+def extend_submission(submission_id: str, data: ExtendRequest) -> Submission:
+    # Pieprasījuma validāciju (VALIDATION_ERROR) FastAPI veic pirms šīs funkcijas.
+    _ensure_extendable(storage.get(submission_id), data.newDueDate)
+
+    statuses = [status.value for status in EXTENDABLE_STATUSES]
+    updated = storage.extend_due_date(
+        submission_id, data.newDueDate.isoformat(), statuses
+    )
+    if updated is None:
+        # Starp pārbaudi un ierakstu iesniegums mainījās: atkārtota pārbaude dod
+        # precīzu kļūdu. Ja to nevar noteikt, pieprasījumu noraida (fail-safe).
+        _ensure_extendable(storage.get(submission_id), data.newDueDate)
+        raise InvalidDueDate()
+    storage.add_audit(submission_id, "EXTEND", data.reason)
+    # Žurnālā tikai iesnieguma ID. Iemeslu nežurnalē.
+    logger.info("Termiņš pagarināts: %s", submission_id)
+    return Submission(**updated)
 
 
 app.mount("/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")
