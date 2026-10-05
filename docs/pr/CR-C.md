@@ -4,7 +4,7 @@ Pieteikums: tracker/CR-C.md
 
 ## 1. Pieteikums un kritēriji
 
-**Ko izstrādājām:** jaunu galapunktu `POST /submissions/{id}/extend` pēc `docs/openapi.yaml` (`extendSubmission`, `ExtendRequest`). Līgums un UI nav mainīti. `app/storage.py` ir mainīts tikai A1 labojuma dēļ (skat. zemāk un 4. sadaļu).
+**Ko izstrādājām:** jaunu galapunktu `POST /submissions/{id}/extend` pēc `docs/openapi.yaml` (`extendSubmission`, `ExtendRequest`). Līgums nav mainīts. `app/storage.py` ir mainīts tikai A1 labojuma dēļ (skat. zemāk un 4. sadaļu). Pēc pamatfunkcionalitātes pabeigšanas papildus pievienota darbinieka UI lapa `ui/statuss.html` (skat. „Papildu funkcionalitāte” zemāk).
 
 | Izmaiņa | Vieta | Kritēriji un lēmumi |
 |---|---|---|
@@ -19,6 +19,16 @@ Kritēriji AC1–AC9 ir izpildīti, un katram ir automātiskais tests (skat. 3. 
 **Pamatota atkāpe no sākotnējā plāna:** plāns paredzēja `app/storage.py` nemainīt. Pārskatīšanā atrastā A1 dēļ tajā pievienota funkcija `extend_due_date`. Atomāru nosacīto ierakstu nevar izveidot ar esošajām funkcijām: `update_due_date` raksta bez nosacījuma, bet `_lock` ir moduļa iekšējs, tāpēc `main.py` to nevar turēt visā pārbaudes un ieraksta laikā. Esošās `storage.py` funkcijas nav mainītas, arī `update_due_date` (B1 netiek skarts). `/extend` to vairs neizmanto.
 
 **T1 īstenošana:** `Annotated[date, Strict()]` nederēja. FastAPI ķermeni validē Python režīmā, un strict režīmā tas noraida arī derīgo `"2026-12-15"`. Tas pārbaudīts pirms implementācijas. Tāpēc formātu pārbauda `mode="before"` validators ar `[0-9]{4}-[0-9]{2}-[0-9]{2}` (`[0-9]`, nevis `\d`, lai nepieņemtu Unicode ciparus). Neesošus datumus (`2026-02-30`) pēc tam noraida Pydantic. Visas formāta kļūdas esošais `_issue()` kartē uz `INVALID_FORMAT`.
+
+**Papildu funkcionalitāte: darbinieka UI lapa `ui/statuss.html`.** Papildus API risinājumam izveidota darbinieka lapa termiņa pagarināšanas vizuālai izmantošanai un pārbaudei (`/ui/statuss.html`, arī `/ui/statuss.html?id=IES-2026-000006`). Šī ir papildu funkcionalitāte ārpus sākotnējā CR-C tvēruma: PO9 noteica, ka UI netiek veidots. Lapa pievienota pēc CR-C pamatfunkcionalitātes pabeigšanas un nomerģēšanas (PR #1), lai risinājumu varētu vizuāli demonstrēt. Lapā var:
+- atvērt iesniegumu pēc numura (`GET /submissions/{id}`);
+- redzēt statusu un aktuālo atbildes termiņu, kā arī tēmu un saņemšanas laiku (UTC). Personas datus lapa nerāda;
+- ievadīt jauno termiņu un pagarināšanas iemeslu;
+- izsaukt esošo `POST /submissions/{id}/extend`;
+- redzēt saprotamus validācijas un kļūdu paziņojumus: lauka kļūdas no `VALIDATION_ERROR` `details`, `INVALID_DUE_DATE`, `INVALID_STATE`, `NOT_FOUND`. Pēc `INVALID_STATE` vai `INVALID_DUE_DATE` lapa ielādē aktuālos datus;
+- pēc veiksmīgas pagarināšanas redzēt jauno termiņu un `EXTEND` ierakstu darbību vēsturē (`GET /submissions/{id}/audit`).
+
+Lapa termiņa noteikumus pati nepārbauda: visus CR-C nosacījumus pārbauda API, un lapa tikai parāda API atbildi (CLAUDE.md: „Validāciju dari API. Forma tikai parāda API kļūdu”). API, līgums un testi šīs lapas dēļ nav mainīti.
 
 **Neskaidrība:**
 
@@ -91,6 +101,10 @@ Pieteikumā atvērtais jautājums bija: kā skaitīt 4 mēnešus, ja mērķa mē
   | 4 | `2027-01-26` (viena diena aiz +4 mēnešu robežas) | 400 `INVALID_DUE_DATE` | AC3 |
 
 - **Ekrānuzņēmums:** viena kritērija pieprasījums un atbilde `/docs`: AC2 robežgadījums, `POST /submissions/IES-2026-000006/extend` ar `newDueDate` = `2027-01-25` → 200, atbildē `dueDate` = `2027-01-25`. Ekrānuzņēmums saglabāts manuāli.
+- **UI lapa `ui/statuss.html`:**
+  - Pārbaudīts, ka serveris lapu pasniedz (200 `text/html`).
+  - Ar tiem pašiem pieprasījumiem, ko sūta lapa, pret palaistu serveri pārbaudītas API atbildes, kuras lapa attēlo: tukša forma → `VALIDATION_ERROR` (`newDueDate`, `reason` → `REQUIRED`); īss iemesls → `reason` → `INVALID_FORMAT`; datums, kas vienāds ar pašreizējo termiņu, un 2027-01-26 → `INVALID_DUE_DATE`; 2027-01-25 → 200; `ANSWERED` → `INVALID_STATE`; nezināms numurs → `NOT_FOUND`.
+  - Lapas JavaScript pārlūkā automātiski nav pārbaudīts, jo izstrādes vidē nav pārlūka. `make test`: 96 passed (UI testu nav).
 
 ## 4. Atradumi
 
@@ -144,4 +158,4 @@ Kategorijas: **A** = CR-C izmaiņu radīts; **B** = jau iepriekš eksistējošs,
 - 200 atbildē nav `ForwardInfo` lauku (CR-B kandidāts 4. sadaļā). Līgumā tie nav obligāti.
 - Nezināms ID kopā ar nederīgu ķermeni dod 400, nevis 404 (PO6).
 
-**Apzināti ārpus CR-C tvēruma:** UI poga vai forma (PO9); paziņojums iedzīvotājam; termiņa saīsināšana; darba dienu pārbaude; laika joslas (tikai UTC); `docs/openapi.yaml` izmaiņas (piem., `TOO_SHORT`); 4. sadaļā minēto esošo kandidātu labošana (PO10). Juridiskās nodaļas komentārs par saprotamu iemeslu ir informācija darbiniekam. Iemesla satura pārbaude nav ieviesta.
+**Apzināti ārpus CR-C tvēruma:** UI poga vai forma (PO9). Pēc pamatfunkcionalitātes demonstrēšanai papildus pievienota darbinieka lapa `ui/statuss.html` (1. sadaļa), bet `darbinieks.html` sarakstā saites uz to nav, un automātisku UI testu nav. Tāpat ārpus tvēruma: paziņojums iedzīvotājam; termiņa saīsināšana; darba dienu pārbaude; laika joslas (tikai UTC); `docs/openapi.yaml` izmaiņas (piem., `TOO_SHORT`); 4. sadaļā minēto esošo kandidātu labošana (PO10). Juridiskās nodaļas komentārs par saprotamu iemeslu ir informācija darbiniekam. Iemesla satura pārbaude nav ieviesta.
